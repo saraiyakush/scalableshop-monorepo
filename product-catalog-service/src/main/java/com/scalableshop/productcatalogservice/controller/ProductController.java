@@ -2,6 +2,8 @@ package com.scalableshop.productcatalogservice.controller;
 
 import com.scalableshop.productcatalogservice.model.Product;
 import com.scalableshop.productcatalogservice.service.ProductService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -12,6 +14,8 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/products")
 public class ProductController {
+
+  private static final Logger log = LoggerFactory.getLogger(ProductController.class);
 
   private final ProductService productService;
 
@@ -28,6 +32,7 @@ public class ProductController {
 
   @GetMapping("/{id}")
   public ResponseEntity<Product> getProductById(@PathVariable Long id) {
+    log.info("Getting product with id {}", id);
     return productService
         .getProductById(id)
         .map(product -> new ResponseEntity<>(product, HttpStatus.OK))
@@ -68,6 +73,7 @@ public class ProductController {
   @PutMapping("/{productId}/stock")
   public ResponseEntity<Product> updateProductStock(
       @PathVariable Long productId, @RequestBody StockUpdateRequest request) {
+    log.info("Updating product stock with id {}, request {}", productId,  request);
     try {
       Product updatedProduct = productService.updateStock(productId, request.getQuantityChange());
       return new ResponseEntity<>(updatedProduct, HttpStatus.OK);
