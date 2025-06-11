@@ -1,7 +1,7 @@
-package com.scalableshop.productinventorymonolith.controller;
+package com.scalableshop.productcatalogservice.controller;
 
-import com.scalableshop.productinventorymonolith.model.Product;
-import com.scalableshop.productinventorymonolith.service.ProductService;
+import com.scalableshop.productcatalogservice.model.Product;
+import com.scalableshop.productcatalogservice.service.ProductService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

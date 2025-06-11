@@ -1,7 +1,7 @@
-package com.scalableshop.productinventorymonolith.service;
+package com.scalableshop.productcatalogservice.service;
 
-import com.scalableshop.productinventorymonolith.model.Product;
-import com.scalableshop.productinventorymonolith.repository.ProductRepository;
+import com.scalableshop.productcatalogservice.model.Product;
+import com.scalableshop.productcatalogservice.repository.ProductRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

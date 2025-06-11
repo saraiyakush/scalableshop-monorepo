@@ -1,4 +1,4 @@
-package com.scalableshop.productinventorymonolith.controller;
+package com.scalableshop.productcatalogservice.controller;
 
 import lombok.Data;
 import lombok.NoArgsConstructor;

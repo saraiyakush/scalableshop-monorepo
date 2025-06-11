@@ -1,6 +1,6 @@
-package com.scalableshop.productinventorymonolith.repository;
+package com.scalableshop.productcatalogservice.repository;
 
-import com.scalableshop.productinventorymonolith.model.Product;
+import com.scalableshop.productcatalogservice.model.Product;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 

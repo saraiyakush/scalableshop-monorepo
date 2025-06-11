@@ -1,4 +1,4 @@
-package com.scalableshop.productinventorymonolith.model;
+package com.scalableshop.productcatalogservice.model;
 
 import jakarta.persistence.*;
 import lombok.Data;
