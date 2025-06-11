@@ -1,0 +1,13 @@
+version: '3.8' # Specify the Docker Compose file format version
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management # Use the RabbitMQ image with management plugin
+    container_name: my-rabbit # A friendly name for the container
+    hostname: rabbit-localhost # Hostname inside the container
+    ports:
+      - "5672:5672" # Standard AMQP port for client connections
+      - "15672:15672" # Management UI port
+    environment: # Default credentials for the management UI
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
