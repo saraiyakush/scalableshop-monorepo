@@ -1,10 +1,10 @@
-package com.scalableshop.productinventorymonolith;
+package com.scalableshop.productinventoryservice;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest
-class ProductInventoryMonolithApplicationTests {
+class ProductInventoryServiceApplicationTests {
 
 	@Test
 	void contextLoads() {

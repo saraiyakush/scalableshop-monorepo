@@ -1,4 +1,4 @@
-package com.scalableshop.productinventorymonolith.model;
+package com.scalableshop.productinventoryservice.model;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

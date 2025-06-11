@@ -1,13 +1,13 @@
-package com.scalableshop.productinventorymonolith;
+package com.scalableshop.productinventoryservice;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class ProductInventoryMonolithApplication {
+public class ProductInventoryServiceApplication {
 
 	public static void main(String[] args) {
-		SpringApplication.run(ProductInventoryMonolithApplication.class, args);
+		SpringApplication.run(ProductInventoryServiceApplication.class, args);
 	}
 
 }
