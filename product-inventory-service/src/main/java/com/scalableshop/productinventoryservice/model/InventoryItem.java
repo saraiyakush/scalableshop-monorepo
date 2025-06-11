@@ -13,7 +13,7 @@ import lombok.NoArgsConstructor;
 @Table(
     name =
         "inventory_items") // Renamed from 'inventory' to avoid conflict with potential 'inventory'
-                           // concept
+// concept
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

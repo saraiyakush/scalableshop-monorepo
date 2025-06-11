@@ -73,7 +73,7 @@ public class ProductController {
   @PutMapping("/{productId}/stock")
   public ResponseEntity<Product> updateProductStock(
       @PathVariable Long productId, @RequestBody StockUpdateRequest request) {
-    log.info("Updating product stock with id {}, request {}", productId,  request);
+    log.info("Updating product stock with id {}, request {}", productId, request);
     try {
       Product updatedProduct = productService.updateStock(productId, request.getQuantityChange());
       return new ResponseEntity<>(updatedProduct, HttpStatus.OK);
