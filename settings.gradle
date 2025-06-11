@@ -2,3 +2,4 @@ rootProject.name = 'scalableshop-monorepo'
 
 include 'product-inventory-service'
 include 'product-catalog-service'
+include 'order-service'
