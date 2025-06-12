@@ -1,10 +1,14 @@
 package com.scalableshop.orderservice.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.scalableshop.events.event.OrderCreatedEvent;
 import com.scalableshop.orderservice.model.Order;
 import com.scalableshop.orderservice.model.OrderItem;
 import com.scalableshop.orderservice.model.OrderStatus;
+import com.scalableshop.orderservice.model.OutboxMessage;
 import com.scalableshop.orderservice.repository.OrderRepository;
+import com.scalableshop.orderservice.repository.OutboxMessageRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cloud.stream.function.StreamBridge;
 import org.springframework.stereotype.Service;
@@ -22,12 +26,20 @@ public class OrderService {
 
   private static final Logger log = LoggerFactory.getLogger(OrderService.class);
   private final OrderRepository orderRepository;
+  private final OutboxMessageRepository outboxMessageRepository;
   private final StreamBridge streamBridge;
+  private final ObjectMapper objectMapper;
 
   @Autowired
-  public OrderService(OrderRepository orderRepository, StreamBridge streamBridge) {
+  public OrderService(
+      OrderRepository orderRepository,
+      StreamBridge streamBridge,
+      OutboxMessageRepository outboxMessageRepository,
+      ObjectMapper objectMapper) {
     this.orderRepository = orderRepository;
     this.streamBridge = streamBridge;
+    this.outboxMessageRepository = outboxMessageRepository;
+    this.objectMapper = objectMapper;
   }
 
   @Transactional
@@ -51,32 +63,53 @@ public class OrderService {
 
           Order savedOrder = orderRepository.save(order);
           log.info("Order created successfully with ID: {}", savedOrder.getId());
-          publishOrderCreatedEvent(savedOrder);
+
+          try {
+            // Map the internal OrderItems to the event-specific OrderCreatedEvent.OrderItemEvent
+            // structure
+            List<OrderCreatedEvent.OrderItemEvent> eventItems =
+                savedOrder.getOrderItems().stream()
+                    .map(
+                        orderItem ->
+                            new OrderCreatedEvent.OrderItemEvent(
+                                orderItem.getProductId(), orderItem.getQuantity()))
+                    .collect(Collectors.toList());
+
+            // Create the OrderCreatedEvent object
+            OrderCreatedEvent event =
+                new OrderCreatedEvent(
+                    savedOrder.getId(),
+                    savedOrder.getCustomerId(),
+                    savedOrder.getOrderDate(),
+                    savedOrder.getTotalAmount(),
+                    eventItems // Pass the converted list of event items
+                    );
+            // Serialize the event to JSON
+            String eventPayload = objectMapper.writeValueAsString(event);
+
+            // Create and save the OutboxMessage within the same transaction
+            OutboxMessage outboxMessage =
+                new OutboxMessage(
+                    "Order", // aggregateType
+                    savedOrder.getId().toString(), // aggregateId (convert Long to String)
+                    "OrderCreatedEvent", // eventType
+                    eventPayload // payload
+                    );
+            outboxMessageRepository.save(outboxMessage);
+            log.info("OrderCreatedEvent added to outbox for Order ID: {}", savedOrder.getId());
+
+          } catch (JsonProcessingException e) {
+            log.error(
+                "Failed to serialize OrderCreatedEvent for Order ID: {}. Event will not be published.",
+                savedOrder.getId(),
+                e);
+            // For Transactional Outbox, we want this to fail the transaction if serialization
+            // fails.
+            throw new RuntimeException("Failed to serialize OrderCreatedEvent", e);
+          }
+
           return savedOrder;
         });
-  }
-
-  private void publishOrderCreatedEvent(Order order) {
-    // Map OrderItem entities to OrderItemEvent DTOs
-    List<OrderCreatedEvent.OrderItemEvent> itemEvents =
-        order.getOrderItems().stream()
-            .map(
-                item ->
-                    new OrderCreatedEvent.OrderItemEvent(item.getProductId(), item.getQuantity()))
-            .collect(Collectors.toList());
-
-    OrderCreatedEvent event =
-        new OrderCreatedEvent(
-            order.getId(),
-            order.getCustomerId(),
-            order.getOrderDate(),
-            order.getTotalAmount(),
-            itemEvents);
-
-    // Send the event using StreamBridge to the 'orderCreatedEventProducer' binding
-    streamBridge.send(
-        "orderCreatedEventProducer-out-0", event); // Use the binding name configured in properties
-    log.info("Published OrderCreatedEvent for Order ID: {}", order.getId());
   }
 
   public Mono<Order> getOrderById(Long orderId) {
