@@ -1,13 +1,17 @@
 package com.scalableshop.productinventoryservice.service;
 
+import com.scalableshop.events.event.OrderCreatedEvent;
 import com.scalableshop.productinventoryservice.model.InventoryItem;
 import com.scalableshop.productinventoryservice.repository.InventoryItemRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Mono;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.function.Consumer;
 
 @Service
 public class InventoryService {
@@ -88,5 +92,26 @@ public class InventoryService {
                       new RuntimeException(
                           "Inventory item not found for product ID: " + productId));
         });
+  }
+
+  @Bean
+  public Consumer<OrderCreatedEvent> orderCreatedEventConsumer() {
+    return event -> {
+      log.info(
+          "Received OrderCreatedEvent for Order ID: {} by Customer ID: {}",
+          event.getOrderId(),
+          event.getCustomerId());
+      // This is where the actual stock reservation logic will go.
+      // For now, we are just logging to confirm the message flow.
+
+      for (OrderCreatedEvent.OrderItemEvent item : event.getOrderItems()) {
+        log.info(
+            "Processing order item from event: Product ID: {}, Quantity: {}",
+            item.getProductId(),
+            item.getQuantity());
+        // In the next step, we will call updateStock here and manage the reservation process.
+      }
+      log.info("Finished processing OrderCreatedEvent for Order ID: {}", event.getOrderId());
+    };
   }
 }
