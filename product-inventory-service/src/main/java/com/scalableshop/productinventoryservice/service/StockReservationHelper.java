@@ -4,15 +4,19 @@ import com.scalableshop.events.event.OrderCreatedEvent;
 import com.scalableshop.events.event.StockReservationFailedEvent;
 import com.scalableshop.events.event.StockReservedEvent;
 import com.scalableshop.productinventoryservice.model.InventoryItem;
+import com.scalableshop.productinventoryservice.model.ProcessedOrderEvent;
 import com.scalableshop.productinventoryservice.repository.InventoryItemRepository;
+import com.scalableshop.productinventoryservice.repository.ProcessedOrderEventRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cloud.stream.function.StreamBridge;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Mono;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -22,12 +26,16 @@ public class StockReservationHelper {
 
   private static final Logger log = LoggerFactory.getLogger(StockReservationHelper.class);
   private final InventoryItemRepository inventoryItemRepository;
+  private final ProcessedOrderEventRepository processedOrderEventRepository;
   private final StreamBridge streamBridge;
 
   @Autowired
   public StockReservationHelper(
-      InventoryItemRepository inventoryItemRepository, StreamBridge streamBridge) {
+      InventoryItemRepository inventoryItemRepository,
+      ProcessedOrderEventRepository processedOrderEventRepository,
+      StreamBridge streamBridge) {
     this.inventoryItemRepository = inventoryItemRepository;
+    this.processedOrderEventRepository = processedOrderEventRepository;
     this.streamBridge = streamBridge;
   }
 
@@ -35,6 +43,22 @@ public class StockReservationHelper {
   public Mono<Boolean> reserveStock(
       Long orderId, Long customerId, List<OrderCreatedEvent.OrderItemEvent> items) {
     log.info("Attempting to reserve stock for Order ID: {}", orderId);
+
+    try {
+      // Try to record this orderId as processed. If a record with this orderId
+      // already exists (due to the unique constraint), a DataIntegrityViolationException
+      // will be thrown, indicating a duplicate event.
+      processedOrderEventRepository.save(new ProcessedOrderEvent(orderId, LocalDateTime.now()));
+      log.info("Successfully recorded Order ID: {} as new for processing.", orderId);
+    } catch (DataIntegrityViolationException e) {
+      log.warn(
+          "Order ID: {} has already been processed or is being processed concurrently. Skipping stock reservation.",
+          orderId);
+      // If we catch this, it means the event was a duplicate.
+      // We return false to indicate that no new action was taken.
+      return Mono.just(false);
+    }
+
     List<StockReservationFailedEvent.FailedItem> failedItems = new ArrayList<>();
     List<StockReservedEvent.ReservedItem> reservedItems = new ArrayList<>();
     boolean allReserved = true;

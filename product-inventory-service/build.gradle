@@ -2,6 +2,7 @@ plugins {
     id 'java'
     id 'org.springframework.boot' version '3.2.5'
     id 'io.spring.dependency-management' version '1.1.7'
+    id 'jacoco'
 }
 
 group = 'com.scalableshop'
@@ -34,21 +35,30 @@ dependencies {
     annotationProcessor 'org.projectlombok:lombok'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testRuntimeOnly 'com.h2database:h2'
 
-    runtimeOnly("io.netty:netty-resolver-dns-native-macos") {
-        artifact {
-            classifier = "osx-aarch_64"
-        }
-    }
 }
 
-tasks.named('test') {
+test {
     useJUnitPlatform()
+    finalizedBy jacocoTestReport
 }
 
-tasks.named('bootRun') {
-    jvmArgs = [
-            "-Dnetty.resolver.noPreferTcp=true",
-            "-Dnetty.resolver.noPreferNative=true"
-    ]
+jacoco {
+    toolVersion = "0.8.11"
+}
+
+jacocoTestReport {
+    dependsOn test
+    reports {
+        xml.required = true
+        html.required = true
+    }
+    afterEvaluate {
+        classDirectories.setFrom(files(classDirectories.files.collect {
+            fileTree(dir: it, exclude: [
+                    '**/com/scalableshop/productinventoryservice/model/*'
+            ])
+        }))
+    }
 }
