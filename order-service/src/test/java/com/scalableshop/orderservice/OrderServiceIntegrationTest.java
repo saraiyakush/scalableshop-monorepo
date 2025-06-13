@@ -180,4 +180,31 @@ public class OrderServiceIntegrationTest {
                         .getAggregateId()
                         .equalsIgnoreCase(createdOrder.getId().toString())));
   }
+
+  @Test
+  void stockReservedEventConsumer_shouldConfirmOrder_StockReservedEvent() {}
+
+  @Test
+  void stockReservedEventConsumer_shouldConfirmOrderOnce_DuplicateStockReservedEvent() {}
+
+  @Test
+  void stockReservedEventConsumer_shouldNotConfirmOrder_AlreadyConfirmedOrder() {}
+
+  @Test
+  void stockReservedEventConsumer_shouldNotDoAnything_OrderNotFound() {}
+
+  @Test
+  void stockReservationFailedEventConsumer_shouldFailOrder_StockReservationFailedEvent() {}
+
+  @Test
+  void stockReservationFailedEventConsumer_shouldFailOrderOnce_DupStockReservationFailedEvent() {}
+
+  @Test
+  void stockReservationFailedEventConsumer_shouldNotFailOrder_AlreadyConfirmedOrder() {}
+
+  @Test
+  void stockReservationFailedEventConsumer_shouldNotFailOrder_AlreadyFailedOrder() {}
+
+  @Test
+  void stockReservationFailedEventConsumer_shouldNotDoAnything_OrderNotFound() {}
 }
