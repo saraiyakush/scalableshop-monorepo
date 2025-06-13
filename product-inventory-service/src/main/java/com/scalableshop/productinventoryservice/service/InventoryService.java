@@ -114,31 +114,16 @@ public class InventoryService {
           "Received OrderCreatedEvent for Order ID: {} by Customer ID: {}",
           event.getOrderId(),
           event.getCustomerId());
-      stockReservationHelper
-          .reserveStock(event.getOrderId(), event.getCustomerId(), event.getOrderItems())
-          .subscribe(
-              success -> {
-                if (success) {
-                  log.info(
-                      "Stock reservation process completed successfully for Order ID: {}",
-                      event.getOrderId());
-                } else {
-                  // This else block might not be hit if an exception is thrown
-                  log.warn(
-                      "Stock reservation process failed for Order ID: {}. Details in logs above (via published event).",
-                      event.getOrderId());
-                }
-              },
-              error -> {
-                // This error block will now catch the RuntimeException thrown by reserveStock
-                log.error(
-                    "Error during stock reservation for Order ID: {}: {}",
-                    event.getOrderId(),
-                    error.getMessage(),
-                    error);
-                // The StockReservationFailedEvent has already been published.
-                // No further action needed here, as the transaction is rolled back.
-              });
+      try {
+        stockReservationHelper.reserveStock(
+            event.getOrderId(), event.getCustomerId(), event.getOrderItems());
+      } catch (RuntimeException error) {
+        log.error(
+            "Error during stock reservation for Order ID: {}: {}",
+            event.getOrderId(),
+            error.getMessage(),
+            error);
+      }
     };
   }
 }

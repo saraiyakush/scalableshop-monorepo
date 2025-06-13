@@ -14,6 +14,7 @@ import org.springframework.cloud.stream.function.StreamBridge;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
@@ -40,23 +41,38 @@ public class StockReservationHelper {
   }
 
   @Transactional
-  public Mono<Boolean> reserveStock(
+  public boolean reserveStock(
       Long orderId, Long customerId, List<OrderCreatedEvent.OrderItemEvent> items) {
     log.info("Attempting to reserve stock for Order ID: {}", orderId);
 
+    log.debug(
+        "TX_DEBUG: reserveStock called for Order ID {}. Is transaction active? {}",
+        orderId,
+        TransactionSynchronizationManager.isActualTransactionActive());
     try {
+      log.debug(
+          "TX_DEBUG: Before saving ProcessedOrderEvent for Order ID {}. Is transaction active? {}",
+          orderId,
+          TransactionSynchronizationManager.isActualTransactionActive());
       // Try to record this orderId as processed. If a record with this orderId
       // already exists (due to the unique constraint), a DataIntegrityViolationException
       // will be thrown, indicating a duplicate event.
       processedOrderEventRepository.save(new ProcessedOrderEvent(orderId, LocalDateTime.now()));
+      log.debug(
+          "TX_DEBUG: After saving ProcessedOrderEvent for Order ID {}. Is transaction active? {}",
+          orderId,
+          TransactionSynchronizationManager.isActualTransactionActive());
       log.info("Successfully recorded Order ID: {} as new for processing.", orderId);
     } catch (DataIntegrityViolationException e) {
       log.warn(
           "Order ID: {} has already been processed or is being processed concurrently. Skipping stock reservation.",
           orderId);
+      log.debug(
+          "TX_DEBUG: Exiting reserveStock (duplicate). Is transaction active? {}",
+          TransactionSynchronizationManager.isActualTransactionActive());
       // If we catch this, it means the event was a duplicate.
       // We return false to indicate that no new action was taken.
-      return Mono.just(false);
+      return false;
     }
 
     List<StockReservationFailedEvent.FailedItem> failedItems = new ArrayList<>();
@@ -104,11 +120,17 @@ public class StockReservationHelper {
     }
 
     if (allReserved) {
+      log.debug(
+          "TX_DEBUG: Successful reservation. Is transaction active? {}. Committing...",
+          TransactionSynchronizationManager.isActualTransactionActive());
       StockReservedEvent event = new StockReservedEvent(orderId, customerId, reservedItems);
       streamBridge.send("stockReservedEventProducer-out-0", event);
       log.info("Published StockReservedEvent for Order ID: {}", orderId);
-      return Mono.just(true);
+      return true;
     } else {
+      log.debug(
+          "TX_DEBUG: Failed reservation. Is transaction active? {}. Throwing RuntimeException, expecting rollback...",
+          TransactionSynchronizationManager.isActualTransactionActive());
       String reason = "Insufficient stock for some items in order " + orderId;
       StockReservationFailedEvent event =
           new StockReservationFailedEvent(orderId, customerId, reason, failedItems);
