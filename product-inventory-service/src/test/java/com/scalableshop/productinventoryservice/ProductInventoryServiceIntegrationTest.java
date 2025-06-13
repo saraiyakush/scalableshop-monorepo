@@ -8,7 +8,6 @@ import com.scalableshop.productinventoryservice.model.ProcessedOrderEvent;
 import com.scalableshop.productinventoryservice.repository.InventoryItemRepository;
 import com.scalableshop.productinventoryservice.repository.ProcessedOrderEventRepository;
 import com.scalableshop.productinventoryservice.service.InventoryService;
-import com.scalableshop.productinventoryservice.service.StockReservationHelper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,21 +15,15 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.cloud.stream.function.StreamBridge;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.Optional;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.reset;
-import static org.mockito.Mockito.timeout;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -45,9 +38,6 @@ public class ProductInventoryServiceIntegrationTest {
   @MockBean // Mock StreamBridge to verify published events without real broker interaction
   private StreamBridge streamBridge;
 
-  // We don't directly autowire StockReservationHelper here to test the consumer flow
-  // The InventoryService's consumer will call it internally.
-
   @BeforeEach
   public void setup() {
     // Clean up repositories before each test to ensure a clean state
@@ -58,7 +48,6 @@ public class ProductInventoryServiceIntegrationTest {
   }
 
   @Test
-  @Transactional // Ensures test runs in a transaction and rolls back
   void orderCreatedEventConsumer_shouldReserveStockAndPublishEvent_Success() {
     // Given
     Long productId = 101L;
@@ -111,8 +100,8 @@ public class ProductInventoryServiceIntegrationTest {
   }
 
   @Test
-  void orderCreatedEventConsumer_shouldFailStockReservationAndPublishFailedEvent_InsufficientStock()
-      throws InterruptedException {
+  void
+      orderCreatedEventConsumer_shouldFailStockReservationAndPublishFailedEvent_InsufficientStock() {
     // Given
     Long productId = 102L;
     int initialStock = 3;
@@ -141,13 +130,6 @@ public class ProductInventoryServiceIntegrationTest {
     // Manually call the consumer bean. The consumer's subscribe will hit the error block.
     inventoryService.orderCreatedEventConsumer().accept(orderCreatedEvent);
 
-    // Since the consumer's subscribe method handles the error asynchronously,
-    // we need to verify the side effects (DB state, published events).
-    // The RuntimeException thrown by StockReservationHelper will cause the Mono returned
-    // by reserveStock to onError, which is caught by the consumer's error handler.
-    // We need to allow time for the async operations (transaction rollback, logging) to complete.
-
-    // Then
     // Verify InventoryItem quantity remains unchanged due to transactional rollback
     Optional<InventoryItem> updatedItem = inventoryItemRepository.findByProductId(productId);
     assertThat(updatedItem).isPresent();
@@ -166,16 +148,10 @@ public class ProductInventoryServiceIntegrationTest {
             eq("stockReservationFailedEventProducer-out-0"),
             any(StockReservationFailedEvent.class));
     verify(streamBridge, never()).send(eq("stockReservedEventProducer-out-0"), any());
-
-    // The consumer's error handling logs the exception, it doesn't re-throw to the test thread
-    // directly
-    // because the 'accept' method is synchronous but its internal 'subscribe' is async.
-    // We've verified side effects.
   }
 
   @Test
-  void orderCreatedEventConsumer_shouldFailStockReservationAndPublishFailedEvent_ProductNotFound()
-      throws InterruptedException {
+  void orderCreatedEventConsumer_shouldFailStockReservationAndPublishFailedEvent_ProductNotFound() {
     // Given
     Long nonExistentProductId = 999L; // This product ID does not exist in inventory
     int requestedQuantity = 2;
@@ -199,7 +175,6 @@ public class ProductInventoryServiceIntegrationTest {
     // When
     inventoryService.orderCreatedEventConsumer().accept(orderCreatedEvent);
 
-    // Then
     // Verify no InventoryItem was created or modified for the non-existent product
     assertThat(inventoryItemRepository.findByProductId(nonExistentProductId)).isNotPresent();
 
@@ -214,7 +189,5 @@ public class ProductInventoryServiceIntegrationTest {
             eq("stockReservationFailedEventProducer-out-0"),
             any(StockReservationFailedEvent.class));
     verify(streamBridge, never()).send(eq("stockReservedEventProducer-out-0"), any());
-
-    // As before, we've verified side effects for the async error.
   }
 }
