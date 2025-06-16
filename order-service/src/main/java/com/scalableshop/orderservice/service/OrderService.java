@@ -31,17 +31,20 @@ public class OrderService {
   private final OutboxMessageRepository outboxMessageRepository;
   private final OrderHelper orderHelper;
   private final ObjectMapper objectMapper;
+  private final OrderOutboxService orderOutboxService;
 
   @Autowired
   public OrderService(
       OrderRepository orderRepository,
       OutboxMessageRepository outboxMessageRepository,
       OrderHelper orderHelper,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      OrderOutboxService orderOutboxService) {
     this.orderRepository = orderRepository;
     this.outboxMessageRepository = outboxMessageRepository;
     this.orderHelper = orderHelper;
     this.objectMapper = objectMapper;
+    this.orderOutboxService = orderOutboxService;
   }
 
   @Transactional
@@ -50,7 +53,7 @@ public class OrderService {
         () -> {
           log.info("Creating new order for customerId: {}", customerId);
           Order savedOrder = createOrderWithPendingStatus(customerId, items);
-          saveOrderCreatedEventInOutbox(savedOrder);
+          orderOutboxService.saveOrderCreatedEvent(savedOrder);
           return savedOrder;
         });
   }
@@ -74,46 +77,6 @@ public class OrderService {
     Order savedOrder = orderRepository.save(order);
     log.info("Order created successfully with ID: {}", savedOrder.getId());
     return savedOrder;
-  }
-
-  private void saveOrderCreatedEventInOutbox(Order savedOrder) {
-    try {
-      OrderCreatedEvent event = buildOrderCreatedEvent(savedOrder);
-      String eventPayload = objectMapper.writeValueAsString(event);
-
-      OutboxMessage outboxMessage =
-          new OutboxMessage(
-              "Order", savedOrder.getId().toString(), "OrderCreatedEvent", eventPayload);
-      outboxMessageRepository.save(outboxMessage);
-      log.info("OrderCreatedEvent added to outbox for Order ID: {}", savedOrder.getId());
-
-    } catch (JsonProcessingException e) {
-      log.error(
-          "Failed to serialize OrderCreatedEvent for Order ID: {}. Event will not be published.",
-          savedOrder.getId(),
-          e);
-      // For Transactional Outbox, we want this to fail the transaction if serialization
-      // fails.
-      throw new RuntimeException("Failed to serialize OrderCreatedEvent", e);
-    }
-  }
-
-  @NotNull
-  private static OrderCreatedEvent buildOrderCreatedEvent(Order savedOrder) {
-    List<OrderCreatedEvent.OrderItemEvent> eventItems =
-        savedOrder.getOrderItems().stream()
-            .map(
-                orderItem ->
-                    new OrderCreatedEvent.OrderItemEvent(
-                        orderItem.getProductId(), orderItem.getQuantity()))
-            .collect(Collectors.toList());
-
-    return new OrderCreatedEvent(
-        savedOrder.getId(),
-        savedOrder.getCustomerId(),
-        savedOrder.getOrderDate(),
-        savedOrder.getTotalAmount(),
-        eventItems);
   }
 
   public Mono<Order> getOrderById(Long orderId) {
