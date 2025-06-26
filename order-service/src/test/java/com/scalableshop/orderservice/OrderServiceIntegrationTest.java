@@ -55,7 +55,7 @@ public class OrderServiceIntegrationTest {
   @Test
   @Transactional // Ensures this test runs within a transaction that rolls back after completion
   void createOrder_shouldSaveOrderAndOutboxMessageAtomically() {
-    // Given
+    // Arrange
     Long customerId = 1L;
     OrderItem item = new OrderItem();
     item.setProductId(101L);
@@ -63,41 +63,16 @@ public class OrderServiceIntegrationTest {
     item.setUnitPrice(BigDecimal.valueOf(10.00));
     item.setSubtotal(BigDecimal.valueOf(20.00)); // Ensure subtotal is calculated or set
 
-    // Ensure OrderItem has a default constructor or its fields are set correctly
-    // (Assuming OrderItem's constructor is handled by Lombok's @NoArgsConstructor or similar)
-    // If OrderItem requires a specific constructor, you might need to adjust this.
-
     List<OrderItem> items = Collections.singletonList(item);
 
-    // When
-    // Call the service method and block on the Mono to get the result
+    // Act
     Order createdOrder = orderService.createOrder(customerId, items).block();
 
     // Then
-    assertThat(createdOrder).isNotNull();
-    assertThat(createdOrder.getId()).isNotNull();
-    assertThat(createdOrder.getCustomerId()).isEqualTo(customerId);
-    assertThat(createdOrder.getStatus()).isEqualTo(OrderStatus.PENDING);
-    assertThat(createdOrder.getOrderItems()).hasSize(1);
-    assertThat(createdOrder.getTotalAmount()).isEqualTo(BigDecimal.valueOf(20.00));
+    verifyOrderIsCreatedInOrdersTable(createdOrder, customerId);
+    verifyOrderCreatedEventIsSavedInOutboxTableOnlyOnce(createdOrder, customerId, item);
 
-    // Verify the order was actually saved in the database
-    assertThat(orderRepository.findById(createdOrder.getId())).isPresent();
-
-    // Verify that exactly one outbox message was saved to the database
-    List<OutboxMessage> outboxMessages = outboxMessageRepository.findAll();
-    assertThat(outboxMessages).hasSize(1);
-    assertThat(outboxMessages.get(0).getAggregateType()).isEqualTo("Order");
-    assertThat(outboxMessages.get(0).getAggregateId()).isEqualTo(createdOrder.getId().toString());
-    assertThat(outboxMessages.get(0).getEventType()).isEqualTo("OrderCreatedEvent");
-    // Verify a part of the payload to ensure the correct event data is stored
-    assertThat(outboxMessages.get(0).getPayload()).contains("\"orderId\":" + createdOrder.getId());
-    assertThat(outboxMessages.get(0).getPayload()).contains("\"customerId\":" + customerId);
-    assertThat(outboxMessages.get(0).getPayload()).contains("\"productId\":" + item.getProductId());
-
-    // Crucially: Verify that StreamBridge.send was NOT called by the createOrder method itself.
-    // The message should only be in the outbox at this point.
-    verify(streamBridge, never()).send(any(), any());
+    verifyOrderCreatedEventIsNotPublished();
   }
 
   @Test
@@ -105,7 +80,7 @@ public class OrderServiceIntegrationTest {
 
   @Test
   void outboxMessageRelayer_shouldPublishAndClearMessage() {
-    // Given
+    // Act
     Long customerId = 2L;
     OrderItem item = new OrderItem();
     item.setProductId(202L);
@@ -114,23 +89,30 @@ public class OrderServiceIntegrationTest {
     item.setSubtotal(BigDecimal.valueOf(50.00)); // Ensure subtotal is calculated or set
     List<OrderItem> items = Collections.singletonList(item);
 
-    // First, create an order to put a message into the outbox
-    Order createdOrder = orderService.createOrder(customerId, items).block();
-    assertThat(outboxMessageRepository.findAll()).hasSize(1); // Confirm message is in outbox
+    prepareOutboxTableHasMessage(customerId, items);
 
-    // When
-    // Manually trigger the outbox message relayer.
-    // In a real application, @Scheduled would run this automatically.
+    // Act
     outboxMessageRelayer.processOutboxMessages();
 
-    // Then
-    // Verify that StreamBridge.send was called exactly once for the correct binding.
+    // Assert
+    verifyOrderCreatedEventIsPublished();
+
+    verifyOutboxTableHasNoMessages();
+  }
+
+  private void prepareOutboxTableHasMessage(Long customerId, List<OrderItem> items) {
+    Order createdOrder = orderService.createOrder(customerId, items).block();
+    assertThat(outboxMessageRepository.findAll()).hasSize(1); // Confirm message is in outbox
+  }
+
+  private void verifyOutboxTableHasNoMessages() {
+    assertThat(outboxMessageRepository.findAll()).isEmpty();
+  }
+
+  private void verifyOrderCreatedEventIsPublished() {
     // 'timeout(500)' gives a small buffer for the mock interaction to register, though
     // for a direct method call like this, it's typically immediate.
     verify(streamBridge, timeout(500).times(1)).send(eq("orderCreatedEventProducer-out-0"), any());
-
-    // Verify that the message was deleted from the outbox table after successful publication
-    assertThat(outboxMessageRepository.findAll()).isEmpty();
   }
 
   @Test
@@ -166,7 +148,7 @@ public class OrderServiceIntegrationTest {
     // Then
     // Verify that StreamBridge.send was attempted exactly once, even though it failed.
     // 'timeout(500)' gives a small buffer for the mock interaction to register.
-    verify(streamBridge, timeout(500).times(1)).send(eq("orderCreatedEventProducer-out-0"), any());
+    verifyOrderCreatedEventIsPublished();
 
     // Crucially: Verify that the message was NOT deleted from the outbox table.
     // If the publishing failed, the message should remain in the outbox
@@ -210,4 +192,33 @@ public class OrderServiceIntegrationTest {
 
   @Test
   void stockReservationFailedEventConsumer_shouldNotDoAnything_OrderNotFound() {}
+
+  private void verifyOrderCreatedEventIsNotPublished() {
+    verify(streamBridge, never()).send(any(), any());
+  }
+
+  private void verifyOrderCreatedEventIsSavedInOutboxTableOnlyOnce(
+      Order createdOrder, Long customerId, OrderItem item) {
+    List<OutboxMessage> outboxMessages = outboxMessageRepository.findAll();
+    assertThat(outboxMessages).hasSize(1);
+    assertThat(outboxMessages.get(0).getAggregateType()).isEqualTo("Order");
+    assertThat(outboxMessages.get(0).getAggregateId()).isEqualTo(createdOrder.getId().toString());
+    assertThat(outboxMessages.get(0).getEventType()).isEqualTo("OrderCreatedEvent");
+    // Verify a part of the payload to ensure the correct event data is stored
+    assertThat(outboxMessages.get(0).getPayload()).contains("\"orderId\":" + createdOrder.getId());
+    assertThat(outboxMessages.get(0).getPayload()).contains("\"customerId\":" + customerId);
+    assertThat(outboxMessages.get(0).getPayload()).contains("\"productId\":" + item.getProductId());
+  }
+
+  private void verifyOrderIsCreatedInOrdersTable(Order createdOrder, Long customerId) {
+    assertThat(createdOrder).isNotNull();
+    assertThat(createdOrder.getId()).isNotNull();
+    assertThat(createdOrder.getCustomerId()).isEqualTo(customerId);
+    assertThat(createdOrder.getStatus()).isEqualTo(OrderStatus.PENDING);
+    assertThat(createdOrder.getOrderItems()).hasSize(1);
+    assertThat(createdOrder.getTotalAmount()).isEqualTo(BigDecimal.valueOf(20.00));
+
+    // Verify the order was actually saved in the database
+    assertThat(orderRepository.findById(createdOrder.getId())).isPresent();
+  }
 }
