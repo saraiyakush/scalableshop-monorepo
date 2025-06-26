@@ -101,6 +101,9 @@ public class OrderServiceIntegrationTest {
   }
 
   @Test
+  void createOrder_shouldNotSaveOrderAndOutboxMessage_whenException() {}
+
+  @Test
   void outboxMessageRelayer_shouldPublishAndClearMessage() {
     // Given
     Long customerId = 2L;
