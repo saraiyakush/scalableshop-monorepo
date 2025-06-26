@@ -8,6 +8,7 @@ import com.scalableshop.productinventoryservice.model.ProcessedOrderEvent;
 import com.scalableshop.productinventoryservice.repository.InventoryItemRepository;
 import com.scalableshop.productinventoryservice.repository.ProcessedOrderEventRepository;
 import com.scalableshop.productinventoryservice.service.InventoryService;
+import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -49,103 +50,55 @@ public class ProductInventoryServiceIntegrationTest {
 
   @Test
   void orderCreatedEventConsumer_shouldReserveStockAndPublishEvent_orderCreatedEvent() {
-    // Given
+    // Arrange
     Long productId = 101L;
     int initialStock = 10;
     int requestedQuantity = 5;
     Long orderId = 1L;
     Long customerId = 10L;
 
-    // Initialize stock for the product
-    inventoryService.initializeStock(productId, initialStock).block();
-    assertThat(inventoryItemRepository.findByProductId(productId)).isPresent();
-    assertThat(inventoryItemRepository.findByProductId(productId).get().getQuantityAvailable())
-        .isEqualTo(initialStock);
+    initializeStock(productId, initialStock);
 
-    // Create an OrderCreatedEvent that the consumer will process
-    OrderCreatedEvent.OrderItemEvent itemEvent =
-        new OrderCreatedEvent.OrderItemEvent(productId, requestedQuantity);
-    OrderCreatedEvent orderCreatedEvent =
-        new OrderCreatedEvent(
-            orderId,
-            customerId,
-            LocalDateTime.now(),
-            BigDecimal.valueOf(requestedQuantity * 10.0),
-            Collections.singletonList(itemEvent));
+    OrderCreatedEvent orderCreatedEventFromOrderService =
+        buildOrderCreatedEventReceivedFromOrderService(
+            productId, requestedQuantity, orderId, customerId);
 
-    // When
-    // Manually call the consumer bean with the event
-    inventoryService.orderCreatedEventConsumer().accept(orderCreatedEvent);
+    // Act
+    inventoryService.orderCreatedEventConsumer().accept(orderCreatedEventFromOrderService);
 
-    // Then
-    // Verify InventoryItem was updated correctly
-    Optional<InventoryItem> updatedItem = inventoryItemRepository.findByProductId(productId);
-    assertThat(updatedItem).isPresent();
-    assertThat(updatedItem.get().getQuantityAvailable())
-        .isEqualTo(initialStock - requestedQuantity);
-    assertThat(updatedItem.get().getQuantityReserved()).isEqualTo(requestedQuantity);
+    // Assert
+    verifyInventoryWasUpdated(productId, initialStock, requestedQuantity);
+    verifyOrderWasSavedInProcessedOrderTable(orderId);
 
-    // Verify ProcessedOrderEvent was saved
-    Optional<ProcessedOrderEvent> processedEvent =
-        processedOrderEventRepository.findByOrderId(orderId);
-    assertThat(processedEvent).isPresent();
-    assertThat(processedEvent.get().getOrderId()).isEqualTo(orderId);
-
-    // Verify StockReservedEvent was published
-    // We use timeout because the consumer might be slightly asynchronous or use reactive
-    // subscribers
-    verify(streamBridge, timeout(500).times(1))
-        .send(eq("stockReservedEventProducer-out-0"), any(StockReservedEvent.class));
-    verify(streamBridge, never()).send(eq("stockReservationFailedEventProducer-out-0"), any());
+    verifyStockReservedEventWasPublished();
+    verifyStockReservationFailedEventWasNotPublished();
   }
 
   @Test
   void orderCreatedEventConsumer_shouldNotReserveStockAndPublishEvent_DupOrderCreatedEvent() {
-    // Given
+    // Arrange
     Long productId = 101L;
     int initialStock = 10;
     int requestedQuantity = 5;
     Long orderId = 1L;
     Long customerId = 10L;
 
-    // Initialize stock for the product
-    inventoryService.initializeStock(productId, initialStock).block();
-    assertThat(inventoryItemRepository.findByProductId(productId)).isPresent();
-    assertThat(inventoryItemRepository.findByProductId(productId).get().getQuantityAvailable())
-        .isEqualTo(initialStock);
+    initializeStock(productId, initialStock);
 
-    // Create an OrderCreatedEvent that the consumer will process
-    OrderCreatedEvent.OrderItemEvent itemEvent =
-        new OrderCreatedEvent.OrderItemEvent(productId, requestedQuantity);
-    OrderCreatedEvent orderCreatedEvent =
-        new OrderCreatedEvent(
-            orderId,
-            customerId,
-            LocalDateTime.now(),
-            BigDecimal.valueOf(requestedQuantity * 10.0),
-            Collections.singletonList(itemEvent));
+    OrderCreatedEvent orderCreatedEventFromOrderService =
+        buildOrderCreatedEventReceivedFromOrderService(
+            productId, requestedQuantity, orderId, customerId);
 
-    // Ensure the orderId is already processed once
-    processedOrderEventRepository.save(new ProcessedOrderEvent(orderId, LocalDateTime.now()));
-    // Verify ProcessedOrderEvent was saved
-    Optional<ProcessedOrderEvent> processedEvent =
-        processedOrderEventRepository.findByOrderId(orderId);
-    assertThat(processedEvent).isPresent();
-    assertThat(processedEvent.get().getOrderId()).isEqualTo(orderId);
+    prepareTheOrderIsProcessedBefore(orderId);
 
-    // When
-    // Manually call the consumer bean with the event
-    inventoryService.orderCreatedEventConsumer().accept(orderCreatedEvent);
+    // Act
+    inventoryService.orderCreatedEventConsumer().accept(orderCreatedEventFromOrderService);
 
-    // Then
-    // Verify InventoryItem was updated correctly
-    Optional<InventoryItem> updatedItem = inventoryItemRepository.findByProductId(productId);
-    assertThat(updatedItem).isPresent();
-    assertThat(updatedItem.get().getQuantityAvailable()).isEqualTo(initialStock);
-    assertThat(updatedItem.get().getQuantityReserved()).isEqualTo(0);
+    // Assert
+    verifyInventoryWasNotUpdated(productId, initialStock);
 
-    verify(streamBridge, never()).send(eq("stockReservedEventProducer-out-0"), any());
-    verify(streamBridge, never()).send(eq("stockReservationFailedEventProducer-out-0"), any());
+    verifyStockReservedEventWasNotPublished();
+    verifyStockReservationFailedEventWasNotPublished();
   }
 
   @Test
@@ -159,32 +112,19 @@ public class ProductInventoryServiceIntegrationTest {
     Long customerId = 11L;
 
     // Initialize stock for the product
-    inventoryService.initializeStock(productId, initialStock).block();
-    assertThat(inventoryItemRepository.findByProductId(productId)).isPresent();
-    assertThat(inventoryItemRepository.findByProductId(productId).get().getQuantityAvailable())
-        .isEqualTo(initialStock);
+    initializeStock(productId, initialStock);
 
     // Create an OrderCreatedEvent that the consumer will process
-    OrderCreatedEvent.OrderItemEvent itemEvent =
-        new OrderCreatedEvent.OrderItemEvent(productId, requestedQuantity);
-    OrderCreatedEvent orderCreatedEvent =
-        new OrderCreatedEvent(
-            orderId,
-            customerId,
-            LocalDateTime.now(),
-            BigDecimal.valueOf(requestedQuantity * 10.0),
-            Collections.singletonList(itemEvent));
+    OrderCreatedEvent orderCreatedEventFromOrderService =
+        buildOrderCreatedEventReceivedFromOrderService(
+            productId, requestedQuantity, orderId, customerId);
 
     // When
     // Manually call the consumer bean. The consumer's subscribe will hit the error block.
-    inventoryService.orderCreatedEventConsumer().accept(orderCreatedEvent);
+    inventoryService.orderCreatedEventConsumer().accept(orderCreatedEventFromOrderService);
 
     // Verify InventoryItem quantity remains unchanged due to transactional rollback
-    Optional<InventoryItem> updatedItem = inventoryItemRepository.findByProductId(productId);
-    assertThat(updatedItem).isPresent();
-    assertThat(updatedItem.get().getQuantityAvailable())
-        .isEqualTo(initialStock); // Should be rolled back
-    assertThat(updatedItem.get().getQuantityReserved()).isEqualTo(0); // Should be rolled back
+    verifyInventoryWasNotUpdated(productId, initialStock);
 
     // Verify ProcessedOrderEvent was NOT saved due to transactional rollback
     Optional<ProcessedOrderEvent> processedEvent =
@@ -196,7 +136,7 @@ public class ProductInventoryServiceIntegrationTest {
         .send(
             eq("stockReservationFailedEventProducer-out-0"),
             any(StockReservationFailedEvent.class));
-    verify(streamBridge, never()).send(eq("stockReservedEventProducer-out-0"), any());
+    verifyStockReservedEventWasNotPublished();
   }
 
   @Test
@@ -211,18 +151,12 @@ public class ProductInventoryServiceIntegrationTest {
     assertThat(inventoryItemRepository.findByProductId(nonExistentProductId)).isNotPresent();
 
     // Create an OrderCreatedEvent for the non-existent product
-    OrderCreatedEvent.OrderItemEvent itemEvent =
-        new OrderCreatedEvent.OrderItemEvent(nonExistentProductId, requestedQuantity);
-    OrderCreatedEvent orderCreatedEvent =
-        new OrderCreatedEvent(
-            orderId,
-            customerId,
-            LocalDateTime.now(),
-            BigDecimal.valueOf(requestedQuantity * 10.0),
-            Collections.singletonList(itemEvent));
+    OrderCreatedEvent orderCreatedEventFromOrderService =
+        buildOrderCreatedEventReceivedFromOrderService(
+            nonExistentProductId, requestedQuantity, orderId, customerId);
 
     // When
-    inventoryService.orderCreatedEventConsumer().accept(orderCreatedEvent);
+    inventoryService.orderCreatedEventConsumer().accept(orderCreatedEventFromOrderService);
 
     // Verify no InventoryItem was created or modified for the non-existent product
     assertThat(inventoryItemRepository.findByProductId(nonExistentProductId)).isNotPresent();
@@ -237,6 +171,75 @@ public class ProductInventoryServiceIntegrationTest {
         .send(
             eq("stockReservationFailedEventProducer-out-0"),
             any(StockReservationFailedEvent.class));
+    verifyStockReservedEventWasNotPublished();
+  }
+
+  private void initializeStock(Long productId, int initialStock) {
+    inventoryService.initializeStock(productId, initialStock).block();
+    assertThat(inventoryItemRepository.findByProductId(productId)).isPresent();
+    assertThat(inventoryItemRepository.findByProductId(productId).get().getQuantityAvailable())
+        .isEqualTo(initialStock);
+  }
+
+  @NotNull
+  private OrderCreatedEvent buildOrderCreatedEventReceivedFromOrderService(
+      Long productId, int requestedQuantity, Long orderId, Long customerId) {
+    OrderCreatedEvent.OrderItemEvent itemEvent =
+        new OrderCreatedEvent.OrderItemEvent(productId, requestedQuantity);
+    OrderCreatedEvent orderCreatedEvent =
+        new OrderCreatedEvent(
+            orderId,
+            customerId,
+            LocalDateTime.now(),
+            BigDecimal.valueOf(requestedQuantity * 10.0),
+            Collections.singletonList(itemEvent));
+    return orderCreatedEvent;
+  }
+
+  private void verifyInventoryWasUpdated(Long productId, int initialStock, int requestedQuantity) {
+    Optional<InventoryItem> updatedItem = inventoryItemRepository.findByProductId(productId);
+    assertThat(updatedItem).isPresent();
+    assertThat(updatedItem.get().getQuantityAvailable())
+        .isEqualTo(initialStock - requestedQuantity);
+    assertThat(updatedItem.get().getQuantityReserved()).isEqualTo(requestedQuantity);
+  }
+
+  private void verifyOrderWasSavedInProcessedOrderTable(Long orderId) {
+    Optional<ProcessedOrderEvent> processedEvent =
+        processedOrderEventRepository.findByOrderId(orderId);
+    assertThat(processedEvent).isPresent();
+    assertThat(processedEvent.get().getOrderId()).isEqualTo(orderId);
+  }
+
+  private void verifyStockReservationFailedEventWasNotPublished() {
+    // We use timeout because the consumer might be slightly asynchronous or use reactive
+    // subscribers
+    verify(streamBridge, never()).send(eq("stockReservationFailedEventProducer-out-0"), any());
+  }
+
+  private void verifyStockReservedEventWasPublished() {
+    verify(streamBridge, timeout(500).times(1))
+        .send(eq("stockReservedEventProducer-out-0"), any(StockReservedEvent.class));
+  }
+
+  private void prepareTheOrderIsProcessedBefore(Long orderId) {
+    processedOrderEventRepository.save(new ProcessedOrderEvent(orderId, LocalDateTime.now()));
+
+    // Verify ProcessedOrderEvent was saved
+    Optional<ProcessedOrderEvent> processedEvent =
+        processedOrderEventRepository.findByOrderId(orderId);
+    assertThat(processedEvent).isPresent();
+    assertThat(processedEvent.get().getOrderId()).isEqualTo(orderId);
+  }
+
+  private void verifyInventoryWasNotUpdated(Long productId, int initialStock) {
+    Optional<InventoryItem> updatedItem = inventoryItemRepository.findByProductId(productId);
+    assertThat(updatedItem).isPresent();
+    assertThat(updatedItem.get().getQuantityAvailable()).isEqualTo(initialStock);
+    assertThat(updatedItem.get().getQuantityReserved()).isEqualTo(0);
+  }
+
+  private void verifyStockReservedEventWasNotPublished() {
     verify(streamBridge, never()).send(eq("stockReservedEventProducer-out-0"), any());
   }
 }
