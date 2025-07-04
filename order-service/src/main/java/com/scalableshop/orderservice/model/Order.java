@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -14,6 +15,7 @@ import java.util.List;
 @Entity
 @Table(name = "customer_orders")
 @Data
+@ToString(exclude = "orderItems")
 @NoArgsConstructor
 @AllArgsConstructor
 public class Order {
