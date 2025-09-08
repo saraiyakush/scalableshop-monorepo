@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.scalableshop.events.event.OrderCreatedEvent;
 import com.scalableshop.events.event.StockReservationFailedEvent;
 import com.scalableshop.events.event.StockReservedEvent;
+import com.scalableshop.orderservice.client.ProductCatalogServiceClient;
+import com.scalableshop.orderservice.client.ProductDetails;
 import com.scalableshop.orderservice.model.*;
 import com.scalableshop.orderservice.repository.OrderRepository;
 import com.scalableshop.orderservice.repository.OutboxMessageRepository;
@@ -32,6 +34,7 @@ public class OrderService {
   private final OrderHelper orderHelper;
   private final ObjectMapper objectMapper;
   private final OrderOutboxService orderOutboxService;
+  private final ProductCatalogServiceClient productCatalogServiceClient;
 
   @Autowired
   public OrderService(
@@ -39,12 +42,14 @@ public class OrderService {
       OutboxMessageRepository outboxMessageRepository,
       OrderHelper orderHelper,
       ObjectMapper objectMapper,
-      OrderOutboxService orderOutboxService) {
+      OrderOutboxService orderOutboxService,
+      ProductCatalogServiceClient productCatalogServiceClient) {
     this.orderRepository = orderRepository;
     this.outboxMessageRepository = outboxMessageRepository;
     this.orderHelper = orderHelper;
     this.objectMapper = objectMapper;
     this.orderOutboxService = orderOutboxService;
+    this.productCatalogServiceClient = productCatalogServiceClient;
   }
 
   @Transactional
@@ -52,6 +57,9 @@ public class OrderService {
     return Mono.fromCallable(
         () -> {
           log.info("Creating new order for customerId: {}", customerId);
+
+          updateItemsWithLatestPrice(items);
+
           Order savedOrder = createOrderWithPendingStatus(customerId, items);
           orderOutboxService.saveOrderCreatedEvent(savedOrder);
           return savedOrder;
@@ -77,6 +85,24 @@ public class OrderService {
     Order savedOrder = orderRepository.save(order);
     log.info("Order created successfully with ID: {}", savedOrder.getId());
     return savedOrder;
+  }
+
+  private void updateItemsWithLatestPrice(List<OrderItem> items) {
+    for (OrderItem item : items) {
+      ProductDetails productDetails =
+          productCatalogServiceClient.getProductDetails(String.valueOf(item.getProductId()));
+
+      if (productDetails.isFallbackUsed()) {
+        // Circuit breaker fallback was used, meaning the product service is down
+        // Depending on business requirements, you might want to:
+        // 1. Reject the order creation
+        // 2. Allow order creation but mark it for manual review
+        // Here, we'll log a warning and proceed with a note
+        log.warn(
+            "Product service is currently unavailable. Proceeding with fallback for productId: {}",
+            item.getProductId());
+      }
+    }
   }
 
   public Mono<Order> getOrderById(Long orderId) {

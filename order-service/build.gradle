@@ -26,6 +26,8 @@ repositories {
 
 dependencies {
     implementation project(':scalableshop-events')
+    implementation project(':circuit-breaker')
+
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
