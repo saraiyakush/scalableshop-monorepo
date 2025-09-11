@@ -2,7 +2,7 @@
 
 # 📖 Project Overview
 
-Welcome to the Scalable Shop Monorepo! This repository hosts a microservices-based e-commerce application built with Spring Boot and Gradle. It's designed to demonstrate a scalable, event-driven architecture, focusing on patterns like the **Outbox Pattern** for reliable event publishing and atomicity across services.
+Welcome to the Scalable Shop Monorepo! This repository hosts a microservices-based e-commerce application built with Spring Boot and Gradle. It's designed to demonstrate a scalable, event-driven architecture, focusing on patterns like the **Outbox Pattern**, **Idempotency**, **Circuit Breaker** and more for reliable event publishing and atomicity across services.
 
 The monorepo structure allows for centralized management of shared code, consistent build configurations, and simplified dependency management across multiple services, while maintaining the benefits of independent service deployment.
 
@@ -12,6 +12,7 @@ The monorepo structure allows for centralized management of shared code, consist
 * **Microservices:** The application is divided into independent, loosely coupled services.
 * **Event-Driven:** Services communicate asynchronously via events, fostering high cohesion and low coupling.
 * **Outbox Pattern:** Ensures transactional consistency between database operations and event publishing.
+* **Circuit Breaker Pattern:** Prevents cascading failures and provides fast failure recovery.
 * **Spring Boot:** Rapid application development with Spring ecosystem.
 * **Gradle Multi-Project Build:** Manages dependencies and builds for all services from a single root.
 
@@ -22,6 +23,7 @@ This monorepo contains the following primary services and modules:
 
 * `order-service`: Manages customer orders, including creation, status updates, and interaction with other services via events.
 * `product-inventory-service`: Manages product stock and handles inventory reservations/deductions based on order events.
+* `product-catalog-service`: Manages product information, categories, and metadata.
 * `scalableshop-events`: A shared Gradle module containing common event DTOs (Data Transfer Objects) and contracts used across all services. This ensures type safety and consistency in event communication.
 
 
@@ -91,6 +93,11 @@ The monorepo is structured as follows:
 ```
 .
 |-- gradlew                     # Gradle wrapper
+|-- circuit-breaker             # Shared module for custom implementation of Circuit Breaker pattern
+|   |-- src
+|   |   `-- main
+|   |-- build.gradlew           # Circuit Breaker specific build file
+|   `-- settings.gradle
 |-- order-service               # Order service
 |   |-- src
 |   |   |-- main
