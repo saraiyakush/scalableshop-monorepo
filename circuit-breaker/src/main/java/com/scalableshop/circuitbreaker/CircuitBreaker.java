@@ -22,8 +22,7 @@ public class CircuitBreaker {
   }
 
   public CircuitBreaker(int failureThreshold) {
-    this.failureThreshold = failureThreshold;
-    this.openStateTimeoutInMillis = 30000;
+    this(failureThreshold, 30000);
   }
 
   public CircuitBreaker(int failureThreshold, long openStateTimeoutInMillis) {
@@ -68,9 +67,7 @@ public class CircuitBreaker {
   private void onFailure() {
     failureCount++;
 
-    if (state == CircuitBreakerState.HALF_OPEN) {
-      transitionToOpen();
-    } else if (failureCount >= failureThreshold) {
+    if (state == CircuitBreakerState.HALF_OPEN || failureCount >= failureThreshold) {
       transitionToOpen();
     }
   }
