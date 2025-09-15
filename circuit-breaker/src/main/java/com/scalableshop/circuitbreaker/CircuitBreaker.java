@@ -6,108 +6,108 @@ import java.util.function.Supplier;
 
 @Getter
 public class CircuitBreaker {
-    private final int failureThreshold;
-    private final long timeoutInMillis;
-    private int failureCount = 0;
-    private int successCount = 0;
-    private CircuitBreakerState state = CircuitBreakerState.CLOSED;
-    private long lastFailureTime = 0;
+  private final int failureThreshold;
+  private final long openStateTimeoutInMillis;
+  private int failureCount = 0;
+  private int successCount = 0;
+  private CircuitBreakerState state = CircuitBreakerState.CLOSED;
+  private long lastFailureTimestamp = 0;
 
-    /**
-     * Default constructor with default values: failureThreshold = 3, timeoutInMillis = 30000
-     */
-    public CircuitBreaker() {
-        this(3, 30000);
+  /**
+   * CircuitBreaker with configurable failure threshold and open-state timeout. Defaults:
+   * failureThreshold = 3, openStateTimeoutInMillis = 30000
+   */
+  public CircuitBreaker() {
+    this(3, 30000);
+  }
+
+  public CircuitBreaker(int failureThreshold) {
+    this.failureThreshold = failureThreshold;
+    this.openStateTimeoutInMillis = 30000;
+  }
+
+  public CircuitBreaker(int failureThreshold, long openStateTimeoutInMillis) {
+    this.failureThreshold = failureThreshold;
+    this.openStateTimeoutInMillis = openStateTimeoutInMillis;
+  }
+
+  public <T> T execute(Supplier<T> operation, T fallback) {
+    checkAndTransitionToHalfOpen();
+
+    if (state == CircuitBreakerState.OPEN) {
+      return fallback;
     }
 
-    /**
-     * Constructor with provided failureThreshold and default timeoutInMillis = 30000
-     *
-     * @param failureThreshold
-     */
-    public CircuitBreaker(int failureThreshold) {
-        this.failureThreshold = failureThreshold;
-        this.timeoutInMillis = 30000;
+    try {
+      T result = operation.get();
+      onSuccess();
+      return result;
+    } catch (Exception e) {
+      onFailure();
+      return fallback;
     }
+  }
 
-    /**
-     * Constructor with provided failureThreshold and timeoutInMillis
-     *
-     * @param failureThreshold
-     * @param timeoutInMillis
-     */
-    public CircuitBreaker(int failureThreshold, long timeoutInMillis) {
-        this.failureThreshold = failureThreshold;
-        this.timeoutInMillis = timeoutInMillis;
+  private void checkAndTransitionToHalfOpen() {
+    if (state == CircuitBreakerState.OPEN && hasTimeoutElapsedSinceLastFailure()) {
+      transitionToHalfOpen();
     }
+  }
 
-    public <T> T execute(Supplier<T> operation, T fallback) {
-        // Check if circuit should transition from OPEN to HALF_OPEN
-        if (state == CircuitBreakerState.OPEN && hasTimeoutElapsedSinceLastFailure()) {
-            state = CircuitBreakerState.HALF_OPEN;
-        }
+  private boolean hasTimeoutElapsedSinceLastFailure() {
+    return System.currentTimeMillis() - lastFailureTimestamp >= openStateTimeoutInMillis;
+  }
 
-        // If circuit is OPEN, return fallback immediately (fast failure)
-        if (state == CircuitBreakerState.OPEN) {
-            return fallback;
-        }
-
-        // Execute the operation (CLOSED or HALF_OPEN state)
-        try {
-            T result = operation.get();
-            onSuccess();
-            return result;
-        } catch (Exception e) {
-            onFailure();
-            return fallback;
-        }
+  private void onSuccess() {
+    successCount++;
+    if (state == CircuitBreakerState.HALF_OPEN) {
+      transitionToClosed();
     }
+  }
 
-    private boolean hasTimeoutElapsedSinceLastFailure() {
-        return System.currentTimeMillis() - lastFailureTime >= timeoutInMillis;
+  private void onFailure() {
+    failureCount++;
+
+    if (state == CircuitBreakerState.HALF_OPEN) {
+      transitionToOpen();
+    } else if (failureCount >= failureThreshold) {
+      transitionToOpen();
     }
+  }
 
-    private void onSuccess() {
-        successCount++;
-        if (state == CircuitBreakerState.HALF_OPEN) {
-            // Recovery successful - close the circuit and reset failure count
-            state = CircuitBreakerState.CLOSED;
-            failureCount = 0;
-        }
-    }
+  private void transitionToClosed() {
+    state = CircuitBreakerState.CLOSED;
+    failureCount = 0;
+  }
 
-    private void onFailure() {
-        failureCount++;
-        lastFailureTime = System.currentTimeMillis();
+  private void transitionToOpen() {
+    lastFailureTimestamp = System.currentTimeMillis();
+    state = CircuitBreakerState.OPEN;
+  }
 
-        if (state == CircuitBreakerState.HALF_OPEN) {
-            // Test failed - go back to OPEN
-            state = CircuitBreakerState.OPEN;
-        } else if (failureCount >= failureThreshold) {
-            // Threshold exceeded - open the circuit
-            state = CircuitBreakerState.OPEN;
-        }
-    }
+  private void transitionToHalfOpen() {
+    state = CircuitBreakerState.HALF_OPEN;
+  }
 
-    public double getFailureRate() {
-        int totalCalls = successCount + failureCount;
-        return totalCalls == 0 ? 0.0 : (double) failureCount / totalCalls;
-    }
+  public double getFailureRate() {
+    int totalCalls = successCount + failureCount;
+    return totalCalls == 0 ? 0.0 : (double) failureCount / totalCalls;
+  }
 
-    public int getTotalCalls() {
-        return successCount + failureCount;
-    }
+  public int getTotalCalls() {
+    return successCount + failureCount;
+  }
 
-    public boolean isCallPermitted() {
-        return state == CircuitBreakerState.CLOSED ||
-                (state == CircuitBreakerState.OPEN && hasTimeoutElapsedSinceLastFailure());
-    }
+  public boolean isCallPermitted() {
+    return state == CircuitBreakerState.CLOSED
+        || (state == CircuitBreakerState.OPEN && hasTimeoutElapsedSinceLastFailure());
+  }
 
-    // For testing - reset the circuit breaker
-    public void reset() {
-        failureCount = 0;
-        successCount = 0;
-        state = CircuitBreakerState.CLOSED;
-        lastFailureTime = 0;
-    }
+  // For testing - reset the circuit breaker
+  public void reset() {
+    failureCount = 0;
+    successCount = 0;
+    state = CircuitBreakerState.CLOSED;
+    lastFailureTimestamp = 0;
+  }
 }
