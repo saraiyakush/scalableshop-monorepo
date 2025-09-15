@@ -33,7 +33,7 @@ public class CircuitBreaker {
   public <T> T execute(Supplier<T> operation, T fallback) {
     checkAndTransitionToHalfOpen();
 
-    if (state == CircuitBreakerState.OPEN) {
+    if (isCircuitOpen()) {
       return fallback;
     }
 
@@ -48,7 +48,7 @@ public class CircuitBreaker {
   }
 
   private void checkAndTransitionToHalfOpen() {
-    if (state == CircuitBreakerState.OPEN && hasTimeoutElapsedSinceLastFailure()) {
+    if (isCircuitOpen() && hasTimeoutElapsedSinceLastFailure()) {
       transitionToHalfOpen();
     }
   }
@@ -59,7 +59,7 @@ public class CircuitBreaker {
 
   private void onSuccess() {
     successCount++;
-    if (state == CircuitBreakerState.HALF_OPEN) {
+    if (isCircuitHalfOpen()) {
       transitionToClosed();
     }
   }
@@ -67,7 +67,7 @@ public class CircuitBreaker {
   private void onFailure() {
     failureCount++;
 
-    if (state == CircuitBreakerState.HALF_OPEN || failureCount >= failureThreshold) {
+    if (isCircuitHalfOpen() || failureCount >= failureThreshold) {
       transitionToOpen();
     }
   }
@@ -86,6 +86,18 @@ public class CircuitBreaker {
     state = CircuitBreakerState.HALF_OPEN;
   }
 
+  private boolean isCircuitOpen() {
+    return state == CircuitBreakerState.OPEN;
+  }
+
+  private boolean isCircuitHalfOpen() {
+    return state == CircuitBreakerState.HALF_OPEN;
+  }
+
+  private boolean isCircuitClosed() {
+    return state == CircuitBreakerState.CLOSED;
+  }
+
   public double getFailureRate() {
     int totalCalls = successCount + failureCount;
     return totalCalls == 0 ? 0.0 : (double) failureCount / totalCalls;
@@ -96,8 +108,8 @@ public class CircuitBreaker {
   }
 
   public boolean isCallPermitted() {
-    return state == CircuitBreakerState.CLOSED
-        || (state == CircuitBreakerState.OPEN && hasTimeoutElapsedSinceLastFailure());
+    return isCircuitClosed()
+        || (isCircuitOpen() && hasTimeoutElapsedSinceLastFailure());
   }
 
   // For testing - reset the circuit breaker
